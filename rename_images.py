@@ -20,9 +20,8 @@ from PIL import Image, UnidentifiedImageError  # requires pillow package - parse
 CACHE_FILENAME = "rename_images.json"
 TAG_DATETIME_ORIGINAL = 36867  # exif:DateTimeOriginal
 TAG_SUBSECTIME_ORIGINAL = 37521  # exif:SubSecTimeOriginal
-PATTERN_NAME_TO_REPLACE = re.compile(
-    r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|\d{3}_\d{4})(\(\d\))?",
-    flags=re.IGNORECASE,
+DEFAULT_PATTERN_NAME_TO_REPLACE = (
+    r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|\d{3}_\d{4})(\(\d\))?"
 )
 
 logger = logging.getLogger(__name__)
@@ -106,16 +105,16 @@ def get_original_date_mov(filepath):
     return date_created
 
 
-def process_directory(filepath, recursive, dry_run, cache):
+def process_directory(filepath, recursive, pattern, dry_run, cache):
     """iterates over entries in the directory renaming files if needed"""
     for child in filepath.iterdir():
         if child.is_file():
-            process_file(child, dry_run, cache)
+            process_file(child, pattern, dry_run, cache)
         elif recursive and child.is_dir():
-            process_directory(child, recursive, dry_run, cache)
+            process_directory(child, recursive, pattern, dry_run, cache)
 
 
-def process_file(filepath, dry_run, cache):
+def process_file(filepath, pattern, dry_run, cache):
     """parses the date created from the file and renames it if needed"""
     suffix = filepath.suffix.lower()
     if suffix in (".jpg", ".jpeg"):
@@ -131,7 +130,7 @@ def process_file(filepath, dry_run, cache):
         logger.warning("unable to find date of creation for %s", filepath)
         return
 
-    new_path = generate_new_filename(filepath, date_created)
+    new_path = generate_new_filename(filepath, pattern, date_created)
     if filepath != new_path and not new_path.is_file():
         logger.info("renaming %s to %s", filepath, new_path)
         if not dry_run:
@@ -142,7 +141,7 @@ def process_file(filepath, dry_run, cache):
             filepath.rename(new_path)
 
 
-def generate_new_filename(filepath, date_created):
+def generate_new_filename(filepath, pattern, date_created):
     """
     returns a new path according to what the new filename should be
     this functions tries to keep file descriptions in place
@@ -150,7 +149,7 @@ def generate_new_filename(filepath, date_created):
     - IMG_9398_picture_at_beach.JPG could become 20210820_123055000_picture_at_beach.JPG
     """
     date_time = date_to_string(date_created)
-    new_name = re.sub(PATTERN_NAME_TO_REPLACE, date_time, filepath.name, count=1)
+    new_name = re.sub(pattern, date_time, filepath.name, count=1)
     if date_time not in new_name:
         new_name = f"{date_time}_{new_name}"
     new_path = pathlib.Path(filepath.parent, new_name)
@@ -158,7 +157,7 @@ def generate_new_filename(filepath, date_created):
         if new_path.is_file():
             for i in range(10):
                 new_name = re.sub(
-                    PATTERN_NAME_TO_REPLACE,
+                    pattern,
                     f"{date_time}_00{i}",
                     filepath.name,
                     count=1,
@@ -219,6 +218,13 @@ def main():
         help="recursively searches the given directory",
     )
     parser.add_argument(
+        "-p",
+        "--pattern",
+        default=DEFAULT_PATTERN_NAME_TO_REPLACE,
+        type=lambda s: re.compile(s, flags=re.IGNORECASE),
+        help="pattern of filename to replace. replaces the portion of the filename that matches the given pattern",
+    )
+    parser.add_argument(
         "--revert",
         action="store_true",
         help="reverts changes for the given directory",
@@ -226,11 +232,16 @@ def main():
     parser.add_argument(
         "directory",
         nargs="?",
-        type=pathlib.Path,
         default=pathlib.Path().cwd(),
+        type=pathlib.Path,
         help="path of directory containing images",
     )
-    args = parser.parse_args()
+
+    try:
+        args = parser.parse_args()
+    except re.error as error:
+        logger.error("invalid regex for --pattern: %s", error)
+        sys.exit(1)
 
     # validate the directory
     if not args.directory.is_dir():
@@ -251,10 +262,14 @@ def main():
     if args.revert:
         revert_directory(args.directory, args.recursive, args.dry_run, cached_data)
     else:
-        process_directory(args.directory, args.recursive, args.dry_run, cached_data)
+        process_directory(
+            args.directory, args.recursive, args.pattern, args.dry_run, cached_data
+        )
 
     # update cache
-    cached_data_file.write_text(json.dumps(cached_data, indent=2) + "\n", encoding="utf-8")
+    cached_data_file.write_text(
+        json.dumps(cached_data, indent=2) + "\n", encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
