@@ -19,6 +19,7 @@ from PIL import Image, UnidentifiedImageError  # requires pillow package - parse
 
 CACHE_FILENAME = "rename_images.json"
 TAG_DATETIME_ORIGINAL = 36867  # exif:DateTimeOriginal
+TAG_DATETIME_DIGITIZED = 36868  # exif:DateTimeDigitized
 TAG_SUBSECTIME_ORIGINAL = 37521  # exif:SubSecTimeOriginal
 DEFAULT_PATTERN_NAME_TO_REPLACE = (
     r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|\d{3}_\d{4})(\(\d\))?"
@@ -34,7 +35,11 @@ def date_to_string(date):
 
 def parse_jpeg_date(date_str):
     """converts string to date"""
-    return datetime.datetime.fromisoformat(date_str.replace(":", "-", 2))
+    try:
+        return datetime.datetime.fromisoformat(date_str.replace(":", "-", 2))
+    except ValueError as e:
+        logger.debug(e)
+    return None
 
 
 def parse_mov_date(date_str):
@@ -47,7 +52,9 @@ def parse_mov_date(date_str):
 
 
 def get_original_date_jpeg(filepath):
-    """returns the DateTimeOriginal exif data from the given jpeg file"""
+    """
+    returns the DateTimeOriginal/DateTimeDigitized exif data from the given jpeg file
+    """
     try:
         with Image.open(filepath) as image:
             # NOTE: using old "private" method because new public method
@@ -55,13 +62,15 @@ def get_original_date_jpeg(filepath):
             #       though, but "DateTime" might differ from "DateTimeOriginal"
             # pylint: disable-next=protected-access
             date_created = image._getexif().get(TAG_DATETIME_ORIGINAL)
+            if not date_created:
+                date_created = image._getexif().get(TAG_DATETIME_DIGITIZED)
             if date_created:
                 # pylint: disable-next=protected-access
                 date_created += "." + image._getexif().get(
                     TAG_SUBSECTIME_ORIGINAL, ""
                 ).zfill(3)
-    except UnidentifiedImageError:
-        logger.warning("unable to parse '%s'", filepath)
+    except (UnidentifiedImageError, AttributeError):
+        logger.debug("unable to parse '%s'", filepath)
         return None
 
     if date_created:
@@ -77,7 +86,7 @@ def get_original_date_heif(filepath):
     try:
         image = pyheif.read_heif(filepath)
     except pyheif.error.HeifError:
-        logger.warning("unable to parse '%s'", filepath)
+        logger.debug("unable to parse '%s'", filepath)
         return None
 
     for data in image.metadata or []:
@@ -116,6 +125,7 @@ def process_directory(filepath, recursive, pattern, dry_run, cache):
 
 def process_file(filepath, pattern, dry_run, cache):
     """parses the date created from the file and renames it if needed"""
+    logger.debug("processing file: %s", filepath)
     suffix = filepath.suffix.lower()
     if suffix in (".jpg", ".jpeg"):
         date_created = get_original_date_jpeg(filepath)
@@ -127,7 +137,7 @@ def process_file(filepath, pattern, dry_run, cache):
         return
 
     if not date_created:
-        logger.warning("unable to find date of creation for %s", filepath)
+        logger.warning("unable to find date of creation for: %s", filepath)
         return
 
     new_path = generate_new_filename(filepath, pattern, date_created)
@@ -138,7 +148,10 @@ def process_file(filepath, pattern, dry_run, cache):
             if str(filepath.parent) not in cache:
                 cache[str(filepath.parent)] = {}
             cache[str(filepath.parent)][str(new_path)] = str(filepath)
-            filepath.rename(new_path)
+            try:
+                filepath.rename(new_path)
+            except PermissionError as e:
+                logger.error(e)
 
 
 def generate_new_filename(filepath, pattern, date_created):
@@ -198,9 +211,6 @@ def main():
     reads files from the given directory and renames them according to the
     DateTimeOriginal exif metadata
     """
-    # logging settings
-    logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
-
     # argparse settings
     parser = argparse.ArgumentParser(
         description="utility to rename images according to their date of creation"
@@ -230,6 +240,14 @@ def main():
         help="reverts changes for the given directory",
     )
     parser.add_argument(
+        "--debug",
+        action="store_const",
+        const=logging.DEBUG,
+        default=logging.INFO,
+        dest="loglevel",
+        help="displays debugging messages",
+    )
+    parser.add_argument(
         "directory",
         nargs="?",
         default=pathlib.Path().cwd(),
@@ -242,6 +260,9 @@ def main():
     except re.error as error:
         logger.error("invalid regex for --pattern: %s", error)
         sys.exit(1)
+
+    # logging settings
+    logging.basicConfig(format="%(levelname)s: %(message)s", level=args.loglevel)
 
     # validate the directory
     if not args.directory.is_dir():
