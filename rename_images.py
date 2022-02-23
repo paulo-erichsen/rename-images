@@ -220,7 +220,8 @@ def main():
     """
     # argparse settings
     parser = argparse.ArgumentParser(
-        description="utility to rename images according to their date of creation"
+        description="utility to rename visual media such as images and videos according to their date of creation",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "-d",
@@ -239,14 +240,26 @@ def main():
         "--pattern",
         default=DEFAULT_PATTERN_NAME_TO_REPLACE,
         type=lambda s: re.compile(s, flags=re.IGNORECASE),
-        help="pattern of filename to replace. replaces the portion of the filename that matches the given pattern",
+        help=r"""pattern of filename to replace. replaces the portion of the filename that matches the given pattern. see re.compile()
+    example:
+        $ rename_images.py --pattern 'IMG_\d{4}'
+            - renames IMG_1999.jpg to 20200222_123045000.jpg -> the pattern matches 'IMG_1999', hence that portion of the filename is replaced by the date
+            - renames IMG_1999_example.jpg to 20200222_123045000_example.jpg -> the portion of the string that doesn't match stays intact
+            - renames PXL_12345678_example.jpg to 20200222_123045000_PXL_12345678_example.jpg -> no match therefore we just prepend the date
+""",
     )
     parser.add_argument(
         "-f",
         "--date-format",
         default=DEFAULT_DATE_FORMAT,
         type=str,
-        help="format of date to use when renaming. renames the file using the given date format. see datetime.strftime()",
+        help="""format of date to use when renaming. renames the file using the given date format. see datetime.strftime()
+    example:
+        $ rename_images.py --date-format '%%Y%%m%%d_%%H%%M%%S%%f"'  renames example.jpg to 20200222_123045000_example.jpg
+          NOTE that this is the default setting. Also note that even though %%f is microsecond, we convert it to millisecond
+        $ rename_images.py --date-format '%%Y-%%m-%%d_%%H-%%M-%%S' renames example.jpg to 2020-02-22_12-30-45_example.jpg
+        $ rename_images.py --date-format '%%Y_%%m_%%d'          renames example.jpg to 2020_02_22_example.jpg
+""",
     )
     parser.add_argument(
         "--revert",
