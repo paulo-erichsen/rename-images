@@ -24,13 +24,20 @@ TAG_SUBSECTIME_ORIGINAL = 37521  # exif:SubSecTimeOriginal
 DEFAULT_PATTERN_NAME_TO_REPLACE = (
     r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|\d{3}_\d{4})(\(\d\))?"
 )
+DEFAULT_DATE_FORMAT = "%Y%m%d_%H%M%S%f"
+LEGAL_DATE_FORMAT_CHARS = re.compile(
+    r"((%[a-z])*[\w\- ]*)*([\w\- ]*(%[a-z])*)*", flags=re.ASCII | re.IGNORECASE
+)
 
 logger = logging.getLogger(__name__)
 
 
-def date_to_string(date):
+def date_to_string(date, date_format):
     """converts a date to string. sample output: 20210620_141545333"""
-    return date.strftime("%Y%m%d_%H%M%S%f")[:-3]
+    result = date.strftime(date_format)
+    if date_format == DEFAULT_DATE_FORMAT:
+        result = result[:-3]
+    return result
 
 
 def parse_jpeg_date(date_str):
@@ -114,16 +121,16 @@ def get_original_date_mov(filepath):
     return date_created
 
 
-def process_directory(filepath, recursive, pattern, dry_run, cache):
+def process_directory(filepath, recursive, pattern, date_format, dry_run, cache):
     """iterates over entries in the directory renaming files if needed"""
     for child in filepath.iterdir():
         if child.is_file():
-            process_file(child, pattern, dry_run, cache)
+            process_file(child, pattern, date_format, dry_run, cache)
         elif recursive and child.is_dir():
-            process_directory(child, recursive, pattern, dry_run, cache)
+            process_directory(child, recursive, pattern, date_format, dry_run, cache)
 
 
-def process_file(filepath, pattern, dry_run, cache):
+def process_file(filepath, pattern, date_format, dry_run, cache):
     """parses the date created from the file and renames it if needed"""
     logger.debug("processing file: %s", filepath)
     suffix = filepath.suffix.lower()
@@ -140,7 +147,7 @@ def process_file(filepath, pattern, dry_run, cache):
         logger.warning("unable to find date of creation for: %s", filepath)
         return
 
-    new_path = generate_new_filename(filepath, pattern, date_created)
+    new_path = generate_new_filename(filepath, pattern, date_created, date_format)
     if filepath != new_path and not new_path.is_file():
         logger.info("renaming %s to %s", filepath, new_path)
         if not dry_run:
@@ -154,14 +161,14 @@ def process_file(filepath, pattern, dry_run, cache):
                 logger.error(e)
 
 
-def generate_new_filename(filepath, pattern, date_created):
+def generate_new_filename(filepath, pattern, date_created, date_format):
     """
     returns a new path according to what the new filename should be
     this functions tries to keep file descriptions in place
     example:
     - IMG_9398_picture_at_beach.JPG could become 20210820_123055000_picture_at_beach.JPG
     """
-    date_time = date_to_string(date_created)
+    date_time = date_to_string(date_created, date_format)
     new_name = re.sub(pattern, date_time, filepath.name, count=1)
     if date_time not in new_name:
         new_name = f"{date_time}_{new_name}"
@@ -235,6 +242,13 @@ def main():
         help="pattern of filename to replace. replaces the portion of the filename that matches the given pattern",
     )
     parser.add_argument(
+        "-f",
+        "--date-format",
+        default=DEFAULT_DATE_FORMAT,
+        type=str,
+        help="format of date to use when renaming. renames the file using the given date format. see datetime.strftime()",
+    )
+    parser.add_argument(
         "--revert",
         action="store_true",
         help="reverts changes for the given directory",
@@ -269,6 +283,17 @@ def main():
         logger.error("'%s' is not a valid directory", args.directory)
         sys.exit(1)
 
+    if (
+        len(args.date_format) < 4
+        or len(args.date_format) > 32
+        or "%" not in args.date_format
+        or not LEGAL_DATE_FORMAT_CHARS.fullmatch(args.date_format)
+    ):
+        logger.error(
+            "'%s' is not a valid date format. see datetime.strftime()", args.date_format
+        )
+        sys.exit(1)
+
     # read cache
     # TODO: maybe use appdirs to find cache_dir: https://github.com/ActiveState/appdirs
     cache_dir = os.environ.get("XDG_CACHE_DIR", pathlib.Path.home().joinpath(".cache"))
@@ -284,7 +309,12 @@ def main():
         revert_directory(args.directory, args.recursive, args.dry_run, cached_data)
     else:
         process_directory(
-            args.directory, args.recursive, args.pattern, args.dry_run, cached_data
+            args.directory,
+            args.recursive,
+            args.pattern,
+            args.date_format,
+            args.dry_run,
+            cached_data,
         )
 
     # update cache
