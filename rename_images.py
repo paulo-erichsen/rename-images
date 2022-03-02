@@ -121,6 +121,14 @@ def get_original_date_mov(filepath):
     return date_created
 
 
+def process_path(filepath, recursive, pattern, date_format, dry_run, cache):
+    """process the given image file or directory containing images"""
+    if filepath.is_dir():
+        process_directory(filepath, recursive, pattern, date_format, dry_run, cache)
+    else:
+        process_file(filepath, pattern, date_format, dry_run, cache)
+
+
 def process_directory(filepath, recursive, pattern, date_format, dry_run, cache):
     """iterates over entries in the directory renaming files if needed"""
     for child in filepath.iterdir():
@@ -188,6 +196,14 @@ def generate_new_filename(filepath, pattern, date_created, date_format):
                 if filepath == new_path or not new_path.is_file():
                     break
     return new_path
+
+
+def revert_path(filepath, recursive, dry_run, cache):
+    """reverts changes for a directory or file"""
+    if filepath.is_dir():
+        revert_directory(filepath, recursive, dry_run, cache)
+    else:
+        revert_file(filepath, dry_run, cache)
 
 
 def revert_directory(filepath, recursive, dry_run, cache):
@@ -264,7 +280,7 @@ def main():
     parser.add_argument(
         "--revert",
         action="store_true",
-        help="reverts changes for the given directory",
+        help="reverts changes for the given directory or file",
     )
     parser.add_argument(
         "--debug",
@@ -275,11 +291,11 @@ def main():
         help="displays debugging messages",
     )
     parser.add_argument(
-        "directory",
+        "path",
         nargs="?",
         default=pathlib.Path().cwd(),
         type=pathlib.Path,
-        help="path of directory containing images",
+        help="path of image file or directory containing images",
     )
 
     try:
@@ -292,8 +308,8 @@ def main():
     logging.basicConfig(format="%(levelname)s: %(message)s", level=args.loglevel)
 
     # validate the directory
-    if not args.directory.is_dir():
-        logger.error("'%s' is not a valid directory", args.directory)
+    if not args.path.is_dir() and not args.path.is_file():
+        logger.error("'%s' is not a valid path", args.path)
         sys.exit(1)
 
     if (
@@ -319,10 +335,10 @@ def main():
 
     # make it so
     if args.revert:
-        revert_directory(args.directory, args.recursive, args.dry_run, cached_data)
+        revert_path(args.path, args.recursive, args.dry_run, cached_data)
     else:
-        process_directory(
-            args.directory,
+        process_path(
+            args.path,
             args.recursive,
             args.pattern,
             args.date_format,
