@@ -1,0 +1,31 @@
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+# TODO: use PEP 621 syntax when poetry starts supporting it
+#       https://github.com/python-poetry/poetry/issues/3332
+[tool.poetry]
+name = "rename-images"
+version = "0.1.0"
+description = "rename images from the date they were taken"
+authors = ["Paulo Erichsen <paulo.h.erichsen@gmail.com>"]
+license = "BSD-3-Clause"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pillow = "^9.0.1"
+piexif = "^1.1.3"
+pyheif = "^0.7.0"
+pymediainfo = "^5.1.0"
+
+[tool.poetry.dev-dependencies]
+flake8 = "^4.0.1"
+black = "^22.1.0"
+
+[tool.poetry.scripts]
+rename-images = "rename_images.rename_images:main"
+
+[build-system]
+requires = ["poetry-core>=1.0.8"]
+build-backend = "poetry.core.masonry.api"

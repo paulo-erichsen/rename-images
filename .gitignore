@@ -1,9 +1,2 @@
-# Exclude everything
-*
-
-# Include only 
-!*.py
-!*.md
-!LICENSE
-!.gitignore
-
+dist/
+__pycache__/
