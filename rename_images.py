@@ -292,8 +292,8 @@ def main():
     )
     parser.add_argument(
         "path",
-        nargs="?",
-        default=pathlib.Path().cwd(),
+        nargs="*",
+        default=[pathlib.Path().cwd()],
         type=pathlib.Path,
         help="path of image file or directory containing images",
     )
@@ -307,10 +307,11 @@ def main():
     # logging settings
     logging.basicConfig(format="%(levelname)s: %(message)s", level=args.loglevel)
 
-    # validate the directory
-    if not args.path.is_dir() and not args.path.is_file():
-        logger.error("'%s' is not a valid path", args.path)
-        sys.exit(1)
+    # validate the paths
+    for path in args.path:
+        if not path.is_dir() and not path.is_file():
+            logger.error("'%s' is not a valid path", path)
+            sys.exit(1)
 
     if (
         len(args.date_format) < 4
@@ -334,17 +335,18 @@ def main():
         pass
 
     # make it so
-    if args.revert:
-        revert_path(args.path, args.recursive, args.dry_run, cached_data)
-    else:
-        process_path(
-            args.path,
-            args.recursive,
-            args.pattern,
-            args.date_format,
-            args.dry_run,
-            cached_data,
-        )
+    for path in args.path:
+        if args.revert:
+            revert_path(path, args.recursive, args.dry_run, cached_data)
+        else:
+            process_path(
+                path,
+                args.recursive,
+                args.pattern,
+                args.date_format,
+                args.dry_run,
+                cached_data,
+            )
 
     # update cache
     cached_data_file.write_text(
