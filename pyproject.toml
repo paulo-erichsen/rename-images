@@ -24,7 +24,7 @@ flake8 = "^4.0.1"
 black = "^22.1.0"
 
 [tool.poetry.scripts]
-rename-images = "rename_images.rename_images:main"
+rename-images = "rename_images:main"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]
