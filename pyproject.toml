@@ -22,6 +22,7 @@ pymediainfo = "^5.1.0"
 [tool.poetry.dev-dependencies]
 flake8 = "^4.0.1"
 black = "^22.1.0"
+pytest = "^7.0.1"
 
 [tool.poetry.scripts]
 rename-images = "rename_images:main"

@@ -62,4 +62,3 @@ say the exif file had the following date of creation:
 ## TODO
 
 - [ ] add support for \*.mp4
-- [ ] add tests

@@ -22,7 +22,7 @@ TAG_DATETIME_ORIGINAL = 36867  # exif:DateTimeOriginal
 TAG_DATETIME_DIGITIZED = 36868  # exif:DateTimeDigitized
 TAG_SUBSECTIME_ORIGINAL = 37521  # exif:SubSecTimeOriginal
 DEFAULT_PATTERN_NAME_TO_REPLACE = (
-    r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|\d{3}_\d{4})(\(\d\))?"
+    r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|DSCN\d{4}|\d{3}_\d{4})(\(\d\))?"
 )
 DEFAULT_DATE_FORMAT = "%Y%m%d_%H%M%S%f"
 LEGAL_DATE_FORMAT_CHARS = re.compile(
@@ -91,7 +91,7 @@ def get_original_date_heif(filepath):
     date_created = None
 
     try:
-        image = pyheif.read_heif(filepath)
+        image = pyheif.read(filepath)
     except pyheif.error.HeifError:
         logger.debug("unable to parse '%s'", filepath)
         return None
@@ -121,24 +121,30 @@ def get_original_date_mov(filepath):
     return date_created
 
 
-def process_path(filepath, recursive, pattern, date_format, dry_run, cache):
+def process_path(filepath, recursive, pattern, date_format, dry_run, cache, renamed):
     """process the given image file or directory containing images"""
     if filepath.is_dir():
-        process_directory(filepath, recursive, pattern, date_format, dry_run, cache)
+        process_directory(
+            filepath, recursive, pattern, date_format, dry_run, cache, renamed
+        )
     else:
-        process_file(filepath, pattern, date_format, dry_run, cache)
+        process_file(filepath, pattern, date_format, dry_run, cache, renamed)
 
 
-def process_directory(filepath, recursive, pattern, date_format, dry_run, cache):
+def process_directory(
+    filepath, recursive, pattern, date_format, dry_run, cache, renamed
+):
     """iterates over entries in the directory renaming files if needed"""
     for child in filepath.iterdir():
         if child.is_file():
-            process_file(child, pattern, date_format, dry_run, cache)
+            process_file(child, pattern, date_format, dry_run, cache, renamed)
         elif recursive and child.is_dir():
-            process_directory(child, recursive, pattern, date_format, dry_run, cache)
+            process_directory(
+                child, recursive, pattern, date_format, dry_run, cache, renamed
+            )
 
 
-def process_file(filepath, pattern, date_format, dry_run, cache):
+def process_file(filepath, pattern, date_format, dry_run, cache, renamed):
     """parses the date created from the file and renames it if needed"""
     logger.debug("processing file: %s", filepath)
     suffix = filepath.suffix.lower()
@@ -158,6 +164,7 @@ def process_file(filepath, pattern, date_format, dry_run, cache):
     new_path = generate_new_filename(filepath, pattern, date_created, date_format)
     if filepath != new_path and not new_path.is_file():
         logger.info("renaming %s to %s", filepath, new_path)
+        renamed[filepath] = new_path
         if not dry_run:
             # cache: { directory: { new_path: old_path } }
             if str(filepath.parent) not in cache:
@@ -329,6 +336,7 @@ def main():
     cache_dir = os.environ.get("XDG_CACHE_DIR", pathlib.Path.home().joinpath(".cache"))
     cached_data_file = pathlib.Path(cache_dir).joinpath(CACHE_FILENAME)
     cached_data = {}
+    renamed_files = {}
     try:
         cached_data = json.loads(cached_data_file.read_text(encoding="utf-8"))
     except (FileNotFoundError, json.decoder.JSONDecodeError):
@@ -346,12 +354,15 @@ def main():
                 args.date_format,
                 args.dry_run,
                 cached_data,
+                renamed_files,
             )
 
     # update cache
     cached_data_file.write_text(
         json.dumps(cached_data, indent=2) + "\n", encoding="utf-8"
     )
+
+    return renamed_files
 
 
 if __name__ == "__main__":
