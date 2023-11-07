@@ -6,7 +6,7 @@ Renames visual media files such as images and videos according to their date of 
 
 This tool looks into metadata of image files to find the date they were created and allows users to rename the file using the date of creation
 
-- supports \*.jpeg, \*.heic and \*.mov files
+- supports \*.jpeg, \*.heic, \*.mp4 and \*.mov files
   - reads EXIF, HEIF metadata to find the date the file was created
 - customizable - user can specify what to rename and how it will be renamed
   - see `--pattern` and `--date-format` options
@@ -58,7 +58,3 @@ say the exif file had the following date of creation:
 | `rename-images`                                   | IMG_2001_family_at_beach.jpg | 20220226_202213203_family_at_beach.jpg  | keeps filename descriptions, portion that didn't match                          |
 | `rename-images --date-format '%Y-%m-%d_%H-%M-%S'` | IMG_2001_family_at_beach.jpg | 2022-02-26_20-22-13_family_at_beach.jpg | configure the format of the date to use when renaming                           |
 | `rename-images --pattern 'FOOBAR\d{4}'`           | FOOBAR9901.JPG               | 20220226_202213203.JPG                  | we can specify a pattern that when matched will be replaced by the date created |
-
-## TODO
-
-- [ ] add support for \*.mp4

@@ -11,19 +11,19 @@ import os
 import pathlib
 import re
 import sys
+from zoneinfo import ZoneInfo
 
 import piexif  # parses exif metadata
 import pyheif  # parses heif images
 import pymediainfo  # parses videos
+from timezonefinder import TimezoneFinder
 from PIL import Image, UnidentifiedImageError  # requires pillow package - parses images
 
 CACHE_FILENAME = "rename_images.json"
 TAG_DATETIME_ORIGINAL = 36867  # exif:DateTimeOriginal
 TAG_DATETIME_DIGITIZED = 36868  # exif:DateTimeDigitized
 TAG_SUBSECTIME_ORIGINAL = 37521  # exif:SubSecTimeOriginal
-DEFAULT_PATTERN_NAME_TO_REPLACE = (
-    r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|DSCN\d{4}|\d{3}_\d{4})(\(\d\))?"
-)
+DEFAULT_PATTERN_NAME_TO_REPLACE = r"^(IMG_\d{4}|(PXL_)?\d{8}_\d{6}(\d{3})?|ABP_\d{4}|DSC\d{5}|DSCN\d{4}|\d{3}_\d{4})(\(\d\))?"
 DEFAULT_DATE_FORMAT = "%Y%m%d_%H%M%S%f"
 LEGAL_DATE_FORMAT_CHARS = re.compile(
     r"((%[a-z])*[\w\- ]*)*([\w\- ]*(%[a-z])*)*", flags=re.ASCII | re.IGNORECASE
@@ -53,6 +53,36 @@ def parse_mov_date(date_str):
     """converts string to date"""
     try:
         return datetime.datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S%z")
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def parse_mp4_date(date_str, coordinates, duration):
+    """
+    duration: used to subtract from the date to find out the beginning of the video
+    coordinates: used to findout the timezone and apply the timezone to the date
+    """
+    try:
+        result = datetime.datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S %Z")
+        if duration:
+            result = result - datetime.timedelta(milliseconds=duration)
+        if coordinates:
+            # https://stackoverflow.com/questions/3518504/regular-expression-for-matching-latitude-longitude-coordinates#comment127711918_18690202
+            m = re.match(
+                r"(?P<lat>^[-+]?(?:[1-8]?\d(?:\.\d+)?|90(?:\.0+)?))(?P<lng>[-+]?(?:180(?:\.0+)?|(?:1[0-7]\d|[1-9]?\d)(?:\.\d+)?))/?$",
+                coordinates,
+            )
+            if m:
+                tf = TimezoneFinder()
+                longitude = float(m.group("lng"))
+                latitude = float(m.group("lat"))
+                tz = tf.timezone_at(lng=longitude, lat=latitude)
+                if tz:
+                    tz = ZoneInfo(tz)
+                    result = result.astimezone(tz)
+                    result = tz.fromutc(result)
+                    return result
     except (TypeError, ValueError):
         pass
     return None
@@ -121,6 +151,15 @@ def get_original_date_mov(filepath):
     return date_created
 
 
+def get_original_date_mp4(filepath):
+    """returns the creation time data from the given mp4 file"""
+    general_track = pymediainfo.MediaInfo.parse(filepath).general_tracks[0]
+    date_created = parse_mp4_date(
+        general_track.encoded_date, general_track.xyz, general_track.duration
+    )
+    return date_created
+
+
 def process_path(filepath, recursive, pattern, date_format, dry_run, cache, renamed):
     """process the given image file or directory containing images"""
     if filepath.is_dir():
@@ -154,6 +193,8 @@ def process_file(filepath, pattern, date_format, dry_run, cache, renamed):
         date_created = get_original_date_heif(filepath)
     elif suffix == ".mov":
         date_created = get_original_date_mov(filepath)
+    elif suffix == ".mp4":
+        date_created = get_original_date_mp4(filepath)
     else:
         return
 
